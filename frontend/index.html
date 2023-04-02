@@ -56,6 +56,24 @@
                 <!-- Div for Chat message window -->
                 <div id="chatPanel" class="card" style="display:none;">
                     <div class="card-header">
+                        <div class="row align-items-start" id="video">
+                            <div class="col">
+                                <video id="localVideo" playsinline autoplay muted></video>
+                                <label for="localCandidateId">Local candidate id: </label>
+                                <p id="localCandidateId">Not connected.</p>
+                            </div>
+                            <div class="col">
+                                <video id="remoteVideo" playsinline autoplay></video>
+                                <label for="localCandidateId">Remote candidate id: </label>
+                                <p id="remoteCandidateId">Not connected.</p>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <button id="startButton">Start</button>
+                            <button id="callButton">Call</button>
+                            <button id="restartButton">Restart ICE</button>
+                            <button id="hangupButton">Hang Up</button>
+                        </div>
                         <div class="row">
                             <div class="col-2 col-sm-2 col-md-2 col-lg-1">
                                 <img src="images/pp.png" id="imgChat" class="rounded-circle profile-pic" />

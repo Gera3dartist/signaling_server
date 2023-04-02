@@ -1,4 +1,5 @@
-﻿var connection = new WebSocket('ws://localhost:8000/ws');
+﻿'use strict';
+var connection = new WebSocket('ws://localhost:8000/ws');
 var Send_dataChannel, peerConnection, connectedUser, Receive_dataChannel;
 var username;
 var chat_window_flag = false;
@@ -8,6 +9,24 @@ var conn_answer;
 var flag_send_datachannel;
 var tm;
 var id_wordflick;
+const localVideo = document.getElementById('localVideo');
+const remoteVideo = document.getElementById('remoteVideo');
+let currentMediaStream;
+let remoteStream;
+
+localVideo.addEventListener('loadedmetadata', function() {
+    console.log(`Local video videoWidth: ${this.videoWidth}px,  videoHeight: ${this.videoHeight}px`);
+  });
+  
+remoteVideo.addEventListener('loadedmetadata', function() {
+console.log(`Remote video videoWidth: ${this.videoWidth}px,  videoHeight: ${this.videoHeight}px`);
+});
+
+
+const video_config = {
+    audio: true,
+    video: {width: {exact: 320}, height: {exact: 240}}
+  }
 /*********************************************************************
  * Client - Sever Ping-Pong 
 **********************************************************************/
@@ -15,7 +34,6 @@ var id_wordflick;
  * This function will send ping request to server
  */
 function ping() {
-    console.log("ping sending");
     send({
         type: "clientping",
         name: "ping"
@@ -33,7 +51,6 @@ function ping() {
  * This function will clear timeout for ping
  */
 function pong() {
-    console.log("clear timeout");
     clearTimeout(tm);
 }
 /*********************************************************************
@@ -61,7 +78,9 @@ connection.onopen = function () {
  * Main functiion to receive data from server.
  */
 connection.onmessage = function (message) {
-    console.log("message from server = ", message.data);
+    if (message.type !== 'server_pong') {
+        console.log("message from server = ", message.data);
+    }
     var data = JSON.parse(message.data);
 
     switch (data.type) {
@@ -189,50 +208,66 @@ var onReceive_ChannelCloseStateChange = function (event) {
  * Registration of data channel callbacks
  */
 var receiveChannelCallback = function (event) {
+    console.log('CHanel callback:', event.channel)
     Receive_dataChannel = event.channel;
     Receive_dataChannel.onopen = onReceive_ChannelOpenState;
     Receive_dataChannel.onmessage = onReceive_ChannelMessageCallback;
     Receive_dataChannel.onerror = onReceive_ChannelErrorState;
     Receive_dataChannel.onclose = onReceive_ChannelCloseStateChange;
 };
+
+
 /**
  * This function will create RTCPeerConnection object.
  */
-function create_webrtc_intial_connection() {
+function createPeerConnection() {
     //ICE server
     var configuration = {
-        "iceServers": [
-            {
-                "urls": "stun:stun.1.google.com:19302"
-            },
-            {
-                urls: 'turn:192.158.29.39:3478?transport=tcp',
-                credential: 'JZEOEt2V3Qb0y27GRntt2u2PAYA=',
-                username: '28224511:1379330808'
-            }
-        ]
+        iceServers: [
+            // {"urls": "stun:stun1.l.google.com:19302"},
+            // {"urls": "stun:stun2.l.google.com:19302"},
+            // {"urls": "stun:stun.l.google.com:19302"},
+            {"urls": "stun:stun.1.google.com:19302"},
+            // {"urls": "stun:stun3.l.google.com:19302"},
+            // {"urls": "stun:stun4.l.google.com:19302"},
+            // {
+            //   urls: "stun:relay.metered.ca:80",
+            // },
+            // {
+            //   urls: "turn:relay.metered.ca:80",
+            //   username: "5749fd6ac5de3fc3bff58dec",
+            //   credential: "9t0c6cezCOvCJdMj",
+            // },
+            // {
+            //   urls: "turn:relay.metered.ca:443",
+            //   username: "5749fd6ac5de3fc3bff58dec",
+            //   credential: "9t0c6cezCOvCJdMj",
+            // },
+            // {
+            //   urls: "turn:relay.metered.ca:443?transport=tcp",
+            //   username: "5749fd6ac5de3fc3bff58dec",
+            //   credential: "9t0c6cezCOvCJdMj",
+            // },
+            // {
+            //     urls: 'turn:192.158.29.39:3478?transport=tcp',
+            //     credential: 'JZEOEt2V3Qb0y27GRntt2u2PAYA=',
+            //     username: '28224511:1379330808'
+            // }
+        ],
     };
-    // navigator.mediaDevices.getUserMedia({audio: true, video: true});
     peerConnection = new RTCPeerConnection(configuration);
     // console.log(peerConnection);
     //when the browser finds an ice candidate we send it to another peer 
     peerConnection.onicecandidate = icecandidateAdded;
-    peerConnection.oniceconnectionstatechange = handlestatechangeCallback;
-    peerConnection.onnegotiationneeded = handleonnegotiatioCallback;
+
+    peerConnection.ontrack = e => {
+        remoteVideo.srcObject = e.streams[0];
+        console.log('Remote video: ' + remoteVideo.srcObject);
+    }
+    currentMediaStream.getTracks().forEach(track => peerConnection.addTrack(track, currentMediaStream));
 
 }
-var handleonnegotiatioCallback = function(event){
-    /* if you want , use this function for handleonnegotiatioCallback  */
-};
-var handlestatechangeCallback = function (event) {
-     /* if you want , use this function for webrtc state change event  */
-    const state = peerConnection.iceConnectionState;
-    if (state === "failed" || state === "closed") {
-       /* handle state failed , closed */
-    } else if (state === "disconnected") {
-       /* handle state disconnected */
-    }
-};
+
 /**
  * This function will handle ICE candidate event. 
  */
@@ -295,42 +330,56 @@ function Create_DataChannel(name) {
     Send_dataChannel.onopen = onSend_ChannelOpenState;
     Send_dataChannel.onclose = onSend_ChannelCloseStateChange;
 }
+
 /**
  * This function will create the webRTC offer request for other user.
  */
  function creating_offer() {
-    peerConnection.createOffer({iceRestart:true})
+    // create peer connection
+    createPeerConnection();
+    // create offer
+    peerConnection.createOffer({
+        offerToReceiveAudio: 1,
+        offerToReceiveVideo: 1
+    })
     .then((offer) => peerConnection.setLocalDescription(offer))
     .then(() => {
-        console.log("creating offer ---");
-        console.log("offer = "+ peerConnection.localDescription);
+        console.log("creating offer = "+ peerConnection.localDescription);
         send({type: "offer", offer: peerConnection.localDescription});
+        
     })
-    .catch((reason) => {
-        clear_outgoing_modal_popup(); /*remove modal when any error occurs */
-        alert("Failed to create offer:" + reason);
-    })
+
+    .catch(e => alert(`getUserMedia() error: ${e.name}`));
 }
 /**
  * This function will send webRTC answer to server for offer request.
  */
  function make_answer() {
     //create RTC peer connection from receive end
-    create_webrtc_intial_connection();
-    //create a data channel bind
-    peerConnection.ondatachannel = receiveChannelCallback;
-    peerConnection.setRemoteDescription(new RTCSessionDescription(conn_offer));
+    navigator.mediaDevices
+    .getUserMedia(video_config)
+    .then((stream) => {
+        localVideo.srcObject = stream;
+        currentMediaStream = stream;
+        // setup peer connection
+        createPeerConnection();
+        peerConnection.ondatachannel = receiveChannelCallback; 
+        peerConnection.setRemoteDescription(new RTCSessionDescription(conn_offer));
+        // create answer
+        peerConnection.createAnswer()
+        .then((answer) => peerConnection.setLocalDescription(answer))
+        .then(() => {
+            console.log("creating answer  => answer = "+ peerConnection.localDescription);
+            send({type: "answer", answer: peerConnection.localDescription});
+            
+        })
+        .catch( err => {
+            console.log(err.name + ': ' + err.message);
+            alert("make_answer:answer is failed");
+            clear_incoming_modal_popup(); /*remove modal when any error occurs */
+        });
+    })
     
-    peerConnection.createAnswer()
-    .then((answer) => peerConnection.setLocalDescription(answer))
-    .then(() => {
-        console.log("creating answer  => answer = "+ peerConnection.localDescription);
-        send({type: "answer", answer: peerConnection.localDescription})})
-    .catch(function(err) {
-        console.log(err.name + ': ' + err.message);
-        alert("answer is failed");
-        clear_incoming_modal_popup(); /*remove modal when any error occurs */
-  });
 }
 
 
@@ -340,8 +389,8 @@ function Create_DataChannel(name) {
  function onAnswer(answer) {
     console.log("when another user answers to  offer => answer = "+ answer);
     document.getElementById('dynamic_progress_text').setAttribute('data-loading-text', "Waiting for a answer from user..Please wait ..");
-    // document.getElementById('dynamic_progress_text').setAttribute('data-loading-text', "Waiting for a answer from user..Please wait ..");
     peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+
     send({
         type: "ready"
     });
@@ -560,10 +609,22 @@ function check_user_status(status, name)
          Create_Popup_Notifications();
          //make an offer 
          document.getElementById('dynamic_progress_text').setAttribute('data-loading-text', "Creating a connection .. Please wait..");
-         create_webrtc_intial_connection();
-         Create_DataChannel(name);
-         document.getElementById('dynamic_progress_text').setAttribute('data-loading-text', "Requesting with user .. Please wait..");
-         creating_offer();
+         // setup media stream
+        navigator.mediaDevices
+        .getUserMedia(video_config)
+        .then((stream) => {
+            localVideo.srcObject = stream;
+            currentMediaStream = stream;
+            createPeerConnection();
+            Create_DataChannel(name);
+            document.getElementById('dynamic_progress_text').setAttribute('data-loading-text', "Requesting with user .. Please wait..");
+            creating_offer();
+        })
+        // .catch((reason) => {
+        //     clear_outgoing_modal_popup(); /*remove modal when any error occurs */
+        //     alert("Failed to create offer:" + reason);
+        // })
+         
     }
     else
     {
