@@ -208,8 +208,8 @@ var onReceive_ChannelCloseStateChange = function (event) {
  * Registration of data channel callbacks
  */
 var receiveChannelCallback = function (event) {
-    console.log('CHanel callback:', event.channel)
-    Receive_dataChannel = event.channel;
+    console.log('CHanel callback:', event.target);
+    Receive_dataChannel = event.target;
     Receive_dataChannel.onopen = onReceive_ChannelOpenState;
     Receive_dataChannel.onmessage = onReceive_ChannelMessageCallback;
     Receive_dataChannel.onerror = onReceive_ChannelErrorState;
@@ -323,7 +323,7 @@ function Create_DataChannel(name) {
 
     var channelname = "webrtc_label_" + name;
     Send_dataChannel = peerConnection.createDataChannel(channelname, dataChannelOptions);
-    console.log("Created DataChannel dataChannel = "+Send_dataChannel);
+    console.log("Created dataChannel = "+Send_dataChannel);
 
     Send_dataChannel.onerror = onSend_ChannelErrorState;
     Send_dataChannel.onmessage = onSend_ChannelMessageCallback;
