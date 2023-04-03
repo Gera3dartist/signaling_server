@@ -8,6 +8,23 @@ var conn_answer;
 var flag_send_datachannel;
 var tm;
 var id_wordflick;
+const localVideo = document.getElementById('localVideo');
+const remoteVideo = document.getElementById('remoteVideo');
+
+localVideo.addEventListener('loadedmetadata', function() {
+    console.log(`Local video videoWidth: ${this.videoWidth}px,  videoHeight: ${this.videoHeight}px`);
+  });
+
+remoteVideo.addEventListener('loadedmetadata', function() {
+console.log(`Remote video videoWidth: ${this.videoWidth}px,  videoHeight: ${this.videoHeight}px`);
+});
+
+
+const video_config = {
+    audio: true,
+
+    video: {width: {exact: 320}, height: {exact: 240}}
+  }
 /*********************************************************************
  * Client - Sever Ping-Pong 
 **********************************************************************/
@@ -15,7 +32,6 @@ var id_wordflick;
  * This function will send ping request to server
  */
 function ping() {
-    console.log("ping sending");
     send({
         type: "clientping",
         name: "ping"
@@ -33,7 +49,6 @@ function ping() {
  * This function will clear timeout for ping
  */
 function pong() {
-    console.log("clear timeout");
     clearTimeout(tm);
 }
 /*********************************************************************
@@ -198,7 +213,7 @@ var receiveChannelCallback = function (event) {
 /**
  * This function will create RTCPeerConnection object.
  */
-function create_webrtc_intial_connection() {
+function createPeerConnection() {
     //ICE server
     var configuration = {
         "iceServers": [
@@ -212,14 +227,24 @@ function create_webrtc_intial_connection() {
             }
         ]
     };
-    // navigator.mediaDevices.getUserMedia({audio: true, video: true});
     peerConnection = new RTCPeerConnection(configuration);
-    // console.log(peerConnection);
-    //when the browser finds an ice candidate we send it to another peer 
+
     peerConnection.onicecandidate = icecandidateAdded;
     peerConnection.oniceconnectionstatechange = handlestatechangeCallback;
     peerConnection.onnegotiationneeded = handleonnegotiatioCallback;
 
+    // setup media connection
+    navigator.mediaDevices
+    .getUserMedia(video_config)
+    .then((stream) => {
+        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream))
+        localVideo.srcObject = stream;
+    });
+    peerConnection.ontrack = e => {
+        remoteVideo.srcObject = e.streams[0];
+        console.log('Remote video: ' + remoteVideo.srcObject);
+    }
+    
 }
 var handleonnegotiatioCallback = function(event){
     /* if you want , use this function for handleonnegotiatioCallback  */
@@ -288,18 +313,22 @@ function Create_DataChannel(name) {
 
     var channelname = "webrtc_label_" + name;
     Send_dataChannel = peerConnection.createDataChannel(channelname, dataChannelOptions);
-    console.log("Created DataChannel dataChannel = "+Send_dataChannel);
+    console.log("Created DataChannel = "+Send_dataChannel);
 
     Send_dataChannel.onerror = onSend_ChannelErrorState;
     Send_dataChannel.onmessage = onSend_ChannelMessageCallback;
     Send_dataChannel.onopen = onSend_ChannelOpenState;
     Send_dataChannel.onclose = onSend_ChannelCloseStateChange;
 }
+
 /**
  * This function will create the webRTC offer request for other user.
  */
  function creating_offer() {
-    peerConnection.createOffer({iceRestart:true})
+    peerConnection.createOffer({
+        iceRestart:true, 
+        // offerToReceiveAudio: 1, offerToReceiveVideo: 0
+    })
     .then((offer) => peerConnection.setLocalDescription(offer))
     .then(() => {
         console.log("creating offer ---");
@@ -315,22 +344,26 @@ function Create_DataChannel(name) {
  * This function will send webRTC answer to server for offer request.
  */
  function make_answer() {
-    //create RTC peer connection from receive end
-    create_webrtc_intial_connection();
+     //create RTC peer connection from receive end
+     createPeerConnection();
+    
+    
     //create a data channel bind
     peerConnection.ondatachannel = receiveChannelCallback;
     peerConnection.setRemoteDescription(new RTCSessionDescription(conn_offer));
-    
+
     peerConnection.createAnswer()
-    .then((answer) => peerConnection.setLocalDescription(answer))
-    .then(() => {
-        console.log("creating answer  => answer = "+ peerConnection.localDescription);
-        send({type: "answer", answer: peerConnection.localDescription})})
-    .catch(function(err) {
-        console.log(err.name + ': ' + err.message);
-        alert("answer is failed");
-        clear_incoming_modal_popup(); /*remove modal when any error occurs */
-  });
+        .then((answer) => peerConnection.setLocalDescription(answer))
+        .then(() => {
+            console.log("creating answer  => answer = "+ peerConnection.localDescription);
+            send({type: "answer", answer: peerConnection.localDescription})})
+        .catch(function(err) {
+            console.log(err.name + ': ' + err.message);
+            alert("answer is failed");
+            clear_incoming_modal_popup(); /*remove modal when any error occurs */
+    });
+
+
 }
 
 
@@ -340,8 +373,8 @@ function Create_DataChannel(name) {
  function onAnswer(answer) {
     console.log("when another user answers to  offer => answer = "+ answer);
     document.getElementById('dynamic_progress_text').setAttribute('data-loading-text', "Waiting for a answer from user..Please wait ..");
-    // document.getElementById('dynamic_progress_text').setAttribute('data-loading-text', "Waiting for a answer from user..Please wait ..");
     peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+
     send({
         type: "ready"
     });
@@ -560,10 +593,13 @@ function check_user_status(status, name)
          Create_Popup_Notifications();
          //make an offer 
          document.getElementById('dynamic_progress_text').setAttribute('data-loading-text', "Creating a connection .. Please wait..");
-         create_webrtc_intial_connection();
-         Create_DataChannel(name);
-         document.getElementById('dynamic_progress_text').setAttribute('data-loading-text', "Requesting with user .. Please wait..");
-         creating_offer();
+         // create peer connection
+        createPeerConnection();
+        
+        Create_DataChannel(name);
+        document.getElementById('dynamic_progress_text').setAttribute('data-loading-text', "Requesting with user .. Please wait..");
+        creating_offer(name);
+
     }
     else
     {
@@ -928,12 +964,10 @@ function SendMessage() {
  * This function will populate the online userlist from the server.
 */
 function LoadOnlineUserList(username_array) {
-
-    console.log(`GOTusername_array >>>> ${username_array}`)
     
     /* convert the json to Map */
     const map2 = new Map(username_array);
-    /* Count of online user -> server send all user list , we have to remove our name from that list */
+    
     document.getElementById('onlineusers').innerHTML = '<span class="indicator label-success"></span>' +
                                                         'online users (' + (map2.size - 1) + ')';
     document.getElementById('lstChat').innerHTML = "";
