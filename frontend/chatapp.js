@@ -10,6 +10,8 @@ var tm;
 var id_wordflick;
 const localVideo = document.getElementById('localVideo');
 const remoteVideo = document.getElementById('remoteVideo');
+let localStream;
+let remoteStream;
 
 localVideo.addEventListener('loadedmetadata', function() {
     console.log(`Local video videoWidth: ${this.videoWidth}px,  videoHeight: ${this.videoHeight}px`);
@@ -21,8 +23,7 @@ console.log(`Remote video videoWidth: ${this.videoWidth}px,  videoHeight: ${this
 
 
 const video_config = {
-    audio: true,
-
+    audio: false,
     video: {width: {exact: 320}, height: {exact: 240}}
   }
 /*********************************************************************
@@ -213,7 +214,7 @@ var receiveChannelCallback = function (event) {
 /**
  * This function will create RTCPeerConnection object.
  */
-function createPeerConnection() {
+function createPeerConnection(initMedia) {
     //ICE server
     var configuration = {
         "iceServers": [
@@ -228,22 +229,28 @@ function createPeerConnection() {
         ]
     };
     peerConnection = new RTCPeerConnection(configuration);
+    // remoteStream = new MediaStream();
+    // remoteVideo.srcObject = remoteStream;
 
     peerConnection.onicecandidate = icecandidateAdded;
     peerConnection.oniceconnectionstatechange = handlestatechangeCallback;
     peerConnection.onnegotiationneeded = handleonnegotiatioCallback;
-
-    // setup media connection
-    navigator.mediaDevices
-    .getUserMedia(video_config)
-    .then((stream) => {
-        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream))
-        localVideo.srcObject = stream;
-    });
+    
     peerConnection.ontrack = e => {
         remoteVideo.srcObject = e.streams[0];
         console.log('Remote video: ' + remoteVideo.srcObject);
     }
+
+    if (initMedia == true) {
+        // setup media connection
+        navigator.mediaDevices
+        .getUserMedia(video_config)
+        .then((stream) => {
+            stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+            localVideo.srcObject = stream;
+        });
+    }
+    
     
 }
 var handleonnegotiatioCallback = function(event){
@@ -326,8 +333,8 @@ function Create_DataChannel(name) {
  */
  function creating_offer() {
     peerConnection.createOffer({
-        iceRestart:true, 
-        // offerToReceiveAudio: 1, offerToReceiveVideo: 0
+        // iceRestart:true,
+        offerToReceiveAudio: 1, offerToReceiveVideo: 0
     })
     .then((offer) => peerConnection.setLocalDescription(offer))
     .then(() => {
@@ -345,12 +352,19 @@ function Create_DataChannel(name) {
  */
  function make_answer() {
      //create RTC peer connection from receive end
-     createPeerConnection();
+     createPeerConnection(false);
     
     
     //create a data channel bind
     peerConnection.ondatachannel = receiveChannelCallback;
-    peerConnection.setRemoteDescription(new RTCSessionDescription(conn_offer));
+    peerConnection.setRemoteDescription(new RTCSessionDescription(conn_offer))
+    .then(() => {
+        navigator.mediaDevices.getUserMedia(video_config)
+        .then((stream) => {
+            localVideo.srcObject = stream
+            stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
+        });
+    })
 
     peerConnection.createAnswer()
         .then((answer) => peerConnection.setLocalDescription(answer))
@@ -373,7 +387,17 @@ function Create_DataChannel(name) {
  function onAnswer(answer) {
     console.log("when another user answers to  offer => answer = "+ answer);
     document.getElementById('dynamic_progress_text').setAttribute('data-loading-text', "Waiting for a answer from user..Please wait ..");
-    peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    peerConnection.setRemoteDescription(new RTCSessionDescription(answer))
+    // .then(() => {
+    //     // setup media connection
+    //     navigator.mediaDevices
+    //     .getUserMedia(video_config)
+    //     .then((stream) => {
+    //         stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+    //         localVideo.srcObject = stream;
+    //         localStream = stream;
+    //     });
+    // });
 
     send({
         type: "ready"
@@ -594,7 +618,7 @@ function check_user_status(status, name)
          //make an offer 
          document.getElementById('dynamic_progress_text').setAttribute('data-loading-text', "Creating a connection .. Please wait..");
          // create peer connection
-        createPeerConnection();
+        createPeerConnection(true);
         
         Create_DataChannel(name);
         document.getElementById('dynamic_progress_text').setAttribute('data-loading-text', "Requesting with user .. Please wait..");
